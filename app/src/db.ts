@@ -42,6 +42,12 @@ async function openAndMigrate(): Promise<SQLiteDBConnection> {
     await conn.open();
   }
 
+  // Before anything else: a transaction left open by a crash would make the
+  // plugin's own beginTransaction() calls below fail with "Already in
+  // transaction".
+  await clearStaleTransaction(conn);
+  ownsTransaction = false;
+
   await applyPragmas(conn);
 
   try {
@@ -137,17 +143,74 @@ export async function scalar(sql: string, values: any[] = []): Promise<any> {
   return keys.length ? row[keys[0]] : null;
 }
 
+/**
+ * True while this module owns an open transaction.
+ *
+ * The plugin's `run()`/`execute()` take an optional `transaction` flag that
+ * DEFAULTS TO TRUE, and Android implements it as a literal `beginTransaction()`
+ * around the statement. Nesting one inside a transaction we already own is
+ * refused with "Already in transaction", so every write has to tell the plugin
+ * whether *it* should open the transaction.
+ */
+let ownsTransaction = false;
+
 /** Runs an INSERT/UPDATE/DELETE. Resolves to { changes, lastId }. */
 export async function exec(
   sql: string,
   values: any[] = []
 ): Promise<{ changes: number; lastId: number }> {
   const conn = await db();
-  const res = await conn.run(sql, values);
+  // true  -> the plugin wraps this single statement in its own transaction
+  // false -> we are inside begin()/commit() already, so it must not
+  const res = await conn.run(sql, values, !ownsTransaction);
   return {
     changes: res.changes?.changes ?? 0,
     lastId: res.changes?.lastId ?? 0,
   };
+}
+
+/** Rolls back a transaction left open by a crash or a failed earlier attempt. */
+async function clearStaleTransaction(conn: SQLiteDBConnection): Promise<void> {
+  try {
+    if ((await conn.isTransactionActive()).result) {
+      console.warn('[db] rolling back a transaction left open by an earlier error');
+      await conn.rollbackTransaction();
+    }
+  } catch (err) {
+    console.warn('[db] stale rollback failed:', message(err));
+  }
+}
+
+/**
+ * Opens a transaction. Any transaction still open from a previous failure is
+ * rolled back first, so a single bad sale cannot wedge every later one.
+ * Use with commit()/rollback(), never the plugin methods directly.
+ */
+export async function begin(conn: SQLiteDBConnection): Promise<void> {
+  await clearStaleTransaction(conn);
+  await conn.beginTransaction();
+  ownsTransaction = true;
+}
+
+/** Commits the transaction opened by begin(). */
+export async function commit(conn: SQLiteDBConnection): Promise<void> {
+  try {
+    await conn.commitTransaction();
+  } finally {
+    ownsTransaction = false;
+  }
+}
+
+/** Undoes the transaction opened by begin(). Never masks the original error. */
+export async function rollback(conn: SQLiteDBConnection): Promise<void> {
+  ownsTransaction = false;
+  try {
+    if ((await conn.isTransactionActive()).result) {
+      await conn.rollbackTransaction();
+    }
+  } catch (err) {
+    console.warn('[db] rollback failed:', message(err));
+  }
 }
 
 /**
@@ -236,6 +299,8 @@ async function seedDefaults(conn: SQLiteDBConnection): Promise<void> {
   };
 
   for (const [key, value] of Object.entries(defaults)) {
-    await conn.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', [key, value]);
+    // Explicit `true`: the plugin wraps this one insert in its own transaction
+    // (we are still inside openAndMigrate, so db()/exec() cannot be used).
+    await conn.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', [key, value], true);
   }
 }

@@ -5,7 +5,7 @@
  * the app looks identical to the browser version.
  */
 
-import { all, db, exec, one, Row, ValidationError } from './db';
+import { all, db, exec, one, rollback as rollbackTx, Row, ValidationError } from './db';
 import { DEFAULT_CURRENCY, DEFAULT_LOW_STOCK } from './config';
 
 /* ------------------------------------------------------------------ dates */
@@ -213,14 +213,7 @@ export async function makeReference(saleDate: string): Promise<string> {
 
 /** Ensures a transaction rollback can never mask the original error. */
 export async function rollback(): Promise<void> {
-  try {
-    const conn = await db();
-    if ((await conn.isTransactionActive()).result) {
-      await conn.rollbackTransaction();
-    }
-  } catch {
-    /* the connection already dropped the transaction */
-  }
+  await rollbackTx(await db());
 }
 
 export { DEFAULT_CURRENCY };

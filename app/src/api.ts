@@ -7,7 +7,7 @@
  * anything the user needs to fix.
  */
 
-import { all, db, exec, one, scalar, Row, ValidationError } from './db';
+import { all, begin as beginTx, commit as commitTx, db, exec, one, scalar, Row, ValidationError } from './db';
 import { APP_NAME, CSV_HEADERS, DB_NAME, DEFAULT_CURRENCY, DEFAULT_LOW_STOCK } from './config';
 import {
   lowStockThreshold,
@@ -276,7 +276,7 @@ async function posCheckout({ body }: Ctx): Promise<any> {
   }
 
   const conn = await db();
-  await conn.beginTransaction();
+  await beginTx(conn);
 
   try {
     const saleDate = await localToday();
@@ -386,7 +386,7 @@ async function posCheckout({ body }: Ctx): Promise<any> {
       [count, total, cost, profit, change, transactionId]
     );
 
-    await conn.commitTransaction();
+    await commitTx(conn);
 
     return {
       ok: true,
@@ -545,7 +545,7 @@ async function saleVoidItem({ body }: Ctx): Promise<any> {
   }
 
   const conn = await db();
-  await conn.beginTransaction();
+  await beginTx(conn);
 
   try {
     const sale = await one('SELECT * FROM transactions WHERE id = ?', [saleId]);
@@ -628,7 +628,7 @@ async function saleVoidItem({ body }: Ctx): Promise<any> {
       ]
     );
 
-    await conn.commitTransaction();
+    await commitTx(conn);
 
     return {
       ok: true,
@@ -814,7 +814,7 @@ async function importProducts({ body }: Ctx): Promise<any> {
   const number = (value: any): number => Number(String(value ?? '').replace(/[, ₱$]/g, '')) || 0;
 
   const conn = await db();
-  await conn.beginTransaction();
+  await beginTx(conn);
 
   try {
     if (mode === 'replace') {
@@ -893,7 +893,7 @@ async function importProducts({ body }: Ctx): Promise<any> {
       }
     }
 
-    await conn.commitTransaction();
+    await commitTx(conn);
 
     return {
       ok: true,
