@@ -27,7 +27,10 @@ try {
         case 'product_restock': product_restock(); break;
 
         // -------------------------------------------------------------- sales
-        case 'pos_checkout': pos_checkout(); break;
+        case 'pos_checkout':   pos_checkout();   break;
+        case 'sales_history':  sales_history();  break;
+        case 'sale_detail':    sale_detail();    break;
+        case 'sale_void_item': sale_void_item(); break;
 
         // ------------------------------------------------------------ reports
         case 'report_summary':  report_summary();  break;
@@ -391,6 +394,261 @@ function pos_checkout(): void
             'store'     => setting('store_name', APP_NAME),
             'cashier'   => setting('owner_name', ''),
             'receipt_footer' => setting('receipt_footer', ''),
+        ]);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/* =========================================================================
+   Purchase history and item removals
+   ========================================================================= */
+
+/**
+ * Completed sales with their voided totals, newest first. Used by the POS
+ * purchase history so the owner can open any receipt and take an item back.
+ */
+function sales_history(): void
+{
+    $pdo   = db();
+    $q     = trim((string) ($_GET['q'] ?? ''));
+    $limit = min(200, max(1, (int) ($_GET['limit'] ?? 50)));
+
+    $sql = 'SELECT t.id, t.reference, t.sold_at, t.sale_date, t.item_count,
+                   t.total_amount, t.total_cost, t.profit, t.cash_received, t.change_due,
+                   (SELECT COUNT(*) FROM transaction_items ti WHERE ti.transaction_id = t.id) AS line_count,
+                   COALESCE((SELECT SUM(v.refund_amount) FROM sale_voids v
+                             WHERE v.transaction_id = t.id), 0) AS voided_amount,
+                   COALESCE((SELECT COUNT(*) FROM sale_voids v
+                             WHERE v.transaction_id = t.id), 0) AS void_count
+            FROM transactions t WHERE 1 = 1';
+    $params = [];
+
+    if ($q !== '') {
+        $sql .= ' AND t.reference LIKE :q';
+        $params[':q'] = '%' . $q . '%';
+    }
+
+    $sql .= ' ORDER BY t.sold_at DESC, t.id DESC LIMIT ' . $limit;
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+
+    json_response([
+        'ok'    => true,
+        'sales' => array_map(static fn(array $r): array => [
+            'id'            => (int) $r['id'],
+            'reference'     => $r['reference'],
+            'sold_at'       => $r['sold_at'],
+            'sale_date'     => $r['sale_date'],
+            'item_count'    => (int) $r['item_count'],
+            'line_count'    => (int) $r['line_count'],
+            'total_amount'  => round((float) $r['total_amount'], 2),
+            'total_cost'    => round((float) $r['total_cost'], 2),
+            'profit'        => round((float) $r['profit'], 2),
+            'cash_received' => round((float) $r['cash_received'], 2),
+            'change_due'    => round((float) $r['change_due'], 2),
+            'voided_amount' => round((float) $r['voided_amount'], 2),
+            'void_count'    => (int) $r['void_count'],
+        ], $stmt->fetchAll()),
+    ]);
+}
+
+/** One sale with the items still on it, plus every removal logged against it. */
+function sale_detail(): void
+{
+    $id  = (int) ($_GET['id'] ?? 0);
+    $pdo = db();
+
+    $stmt = $pdo->prepare('SELECT * FROM transactions WHERE id = :id');
+    $stmt->execute([':id' => $id]);
+    $sale = $stmt->fetch();
+
+    if (!$sale) {
+        json_error('Sale not found.', 404);
+    }
+
+    $lines = $pdo->prepare(
+        'SELECT id, product_id, product_name, qty, cost_price, selling_price, line_total, line_profit
+         FROM transaction_items WHERE transaction_id = :id ORDER BY id ASC'
+    );
+    $lines->execute([':id' => $id]);
+
+    $voids = $pdo->prepare(
+        'SELECT id, item_id, product_name, qty, unit_price, refund_amount, cost_price, reason, voided_at
+         FROM sale_voids WHERE transaction_id = :id ORDER BY id DESC'
+    );
+    $voids->execute([':id' => $id]);
+
+    $lineRows = array_map(static fn(array $r): array => [
+        'id'            => (int) $r['id'],
+        'product_id'    => $r['product_id'] !== null ? (int) $r['product_id'] : null,
+        'name'          => $r['product_name'],
+        'qty'           => round((float) $r['qty'], 3),
+        'cost_price'    => round((float) $r['cost_price'], 2),
+        'selling_price' => round((float) $r['selling_price'], 2),
+        'line_total'    => round((float) $r['line_total'], 2),
+        'line_profit'   => round((float) $r['line_profit'], 2),
+    ], $lines->fetchAll());
+
+    $voidRows = array_map(static fn(array $r): array => [
+        'id'            => (int) $r['id'],
+        'item_id'       => $r['item_id'] !== null ? (int) $r['item_id'] : null,
+        'name'          => $r['product_name'],
+        'qty'           => round((float) $r['qty'], 3),
+        'unit_price'    => round((float) $r['unit_price'], 2),
+        'refund_amount' => round((float) $r['refund_amount'], 2),
+        'cost_price'    => round((float) $r['cost_price'], 2),
+        'reason'        => (string) $r['reason'],
+        'voided_at'     => $r['voided_at'],
+    ], $voids->fetchAll());
+
+    json_response([
+        'ok'   => true,
+        'sale' => [
+            'id'            => (int) $sale['id'],
+            'reference'     => $sale['reference'],
+            'sold_at'       => $sale['sold_at'],
+            'sale_date'     => $sale['sale_date'],
+            'item_count'    => (int) $sale['item_count'],
+            'total_amount'  => round((float) $sale['total_amount'], 2),
+            'total_cost'    => round((float) $sale['total_cost'], 2),
+            'profit'        => round((float) $sale['profit'], 2),
+            'cash_received' => round((float) $sale['cash_received'], 2),
+            'change_due'    => round((float) $sale['change_due'], 2),
+            'voided_amount' => round(array_sum(array_column($voidRows, 'refund_amount')), 2),
+        ],
+        'lines' => $lineRows,
+        'voids' => $voidRows,
+    ]);
+}
+
+/**
+ * Take part or all of an item back from a completed sale.
+ *
+ * The pieces go back on the shelf, the sale keeps the reduced total so every
+ * report stays net of refunds, and the removal is appended to sale_voids.
+ * change_due is deliberately left alone: it is the change actually handed over
+ * when the customer paid, and the cash owed back is the logged refund.
+ */
+function sale_void_item(): void
+{
+    $input  = request_input();
+    $saleId = (int) ($input['transaction_id'] ?? 0);
+    $itemId = (int) ($input['item_id'] ?? 0);
+    $qty    = round((float) ($input['qty'] ?? 0), 3);
+    $unit   = round((float) ($input['unit_price'] ?? 0), 2);
+    $reason = trim((string) ($input['reason'] ?? ''));
+
+    if ($saleId <= 0 || $itemId <= 0) {
+        json_error('Missing sale or item.');
+    }
+    if ($qty <= 0) {
+        json_error('Enter how many pieces are being returned.');
+    }
+    if ($unit < 0) {
+        json_error('The refund price cannot be negative.');
+    }
+
+    $pdo = db();
+    $pdo->beginTransaction();
+
+    try {
+        $saleStmt = $pdo->prepare('SELECT * FROM transactions WHERE id = :id');
+        $saleStmt->execute([':id' => $saleId]);
+        $sale = $saleStmt->fetch();
+        if (!$sale) {
+            throw new InvalidArgumentException('Sale not found.');
+        }
+
+        $itemStmt = $pdo->prepare(
+            'SELECT * FROM transaction_items WHERE id = :id AND transaction_id = :tid'
+        );
+        $itemStmt->execute([':id' => $itemId, ':tid' => $saleId]);
+        $item = $itemStmt->fetch();
+        if (!$item) {
+            throw new InvalidArgumentException('That item is not part of this sale.');
+        }
+
+        $lineQty  = round((float) $item['qty'], 3);
+        $unitCost = round((float) $item['cost_price'], 2);
+        $unitSell = round((float) $item['selling_price'], 2);
+
+        if ($qty > $lineQty) {
+            throw new InvalidArgumentException(
+                'Only ' . qty($lineQty) . ' pcs of ' . $item['product_name'] . ' are still on this sale.'
+            );
+        }
+        if ($unit > $unitSell) {
+            throw new InvalidArgumentException(
+                'The refund cannot exceed the ' . money($unitSell) . ' charged for each piece.'
+            );
+        }
+
+        $refund  = round($unit * $qty, 2);
+        $costBack = round($unitCost * $qty, 2);
+
+        // The whole line is gone, drop it; otherwise shrink what is left.
+        if ($qty >= $lineQty) {
+            $pdo->prepare('DELETE FROM transaction_items WHERE id = :id')->execute([':id' => $itemId]);
+        } else {
+            $leftQty    = round($lineQty - $qty, 3);
+            $leftTotal  = round($unitSell * $leftQty, 2);
+            $leftProfit = round($leftTotal - ($unitCost * $leftQty), 2);
+            $pdo->prepare(
+                'UPDATE transaction_items SET qty = :qty, line_total = :total, line_profit = :profit
+                 WHERE id = :id'
+            )->execute([':qty' => $leftQty, ':total' => $leftTotal, ':profit' => $leftProfit, ':id' => $itemId]);
+        }
+
+        // The goods come back on the shelf, unless the product was deleted since.
+        if ($item['product_id'] !== null) {
+            $pdo->prepare(
+                "UPDATE products SET stock_qty = stock_qty + :qty, updated_at = datetime('now','localtime')
+                 WHERE id = :id"
+            )->execute([':qty' => $qty, ':id' => (int) $item['product_id']]);
+        }
+
+        $total  = round((float) $sale['total_amount'] - $refund, 2);
+        $cost   = round((float) $sale['total_cost'] - $costBack, 2);
+        $profit = round($total - $cost, 2);
+        $count  = max(0, (int) $sale['item_count'] - (int) ceil($qty));
+
+        $pdo->prepare(
+            'UPDATE transactions SET item_count = :count, total_amount = :total,
+                    total_cost = :cost, profit = :profit WHERE id = :id'
+        )->execute([
+            ':count' => $count, ':total' => $total, ':cost' => $cost,
+            ':profit' => $profit, ':id' => $saleId,
+        ]);
+
+        $pdo->prepare(
+            'INSERT INTO sale_voids
+                (transaction_id, item_id, product_name, qty, unit_price, refund_amount, cost_price, reason)
+             VALUES (:tid, :iid, :name, :qty, :unit, :refund, :cost, :reason)'
+        )->execute([
+            ':tid' => $saleId, ':iid' => $itemId, ':name' => $item['product_name'],
+            ':qty' => $qty, ':unit' => $unit, ':refund' => $refund,
+            ':cost' => $unitCost, ':reason' => $reason,
+        ]);
+
+        $pdo->commit();
+
+        json_response([
+            'ok'      => true,
+            'message' => 'Returned ' . qty($qty) . ' × ' . $item['product_name']
+                       . ' and refunded ' . money($refund) . '.',
+            'sale'    => [
+                'id'            => $saleId,
+                'item_count'    => $count,
+                'total_amount'  => $total,
+                'total_cost'    => $cost,
+                'profit'        => $profit,
+                'refund_amount' => $refund,
+            ],
         ]);
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {

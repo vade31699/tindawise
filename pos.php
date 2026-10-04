@@ -23,6 +23,7 @@ require __DIR__ . '/includes/header.php';
     <input class="input input--search" type="search" id="pos-search" autocomplete="off"
            inputmode="search" placeholder="Search an item to sell…" aria-label="Search items">
   </div>
+  <button class="btn btn--ghost pos-history-btn" id="btn-history" type="button">🧾 Sales history</button>
 </section>
 
 <div class="pill-row" id="pos-filters" style="margin-bottom:12px">
@@ -35,8 +36,7 @@ require __DIR__ . '/includes/header.php';
 </section>
 
 <!-- Cart summary bar, sits above the bottom navigation. -->
-<button class="btn btn--block" id="cart-bar" type="button"
-        style="position:fixed;left:16px;right:16px;bottom:calc(var(--nav-height) + 14px);max-width:688px;margin:0 auto;z-index:45;min-height:54px;justify-content:space-between;padding:0 18px">
+<button class="btn btn--block cart-bar" id="cart-bar" type="button">
   <span id="cart-bar-count">Cart is empty</span>
   <span id="cart-bar-total"><?= e(money(0)) ?></span>
 </button>
@@ -105,5 +105,78 @@ require __DIR__ . '/includes/header.php';
     receiptFooter: <?= json_encode(setting('receipt_footer', '')) ?>
   };
 </script>
+
+<!-- ============================================ purchase history / item removal -->
+<!-- One sheet with three panes (list / detail / remove) so only a single modal
+     is ever open and the body scroll lock stays correct. -->
+<div class="modal" id="history-modal" role="dialog" aria-modal="true" aria-labelledby="history-title">
+  <div class="modal__sheet">
+
+    <div data-pane="list">
+      <div class="modal__head">
+        <h2 id="history-title">Purchase history</h2>
+        <button class="modal__close" type="button" data-close aria-label="Close">✕</button>
+      </div>
+
+      <div class="search-wrap">
+        <input class="input input--search" type="search" id="history-search" autocomplete="off"
+               inputmode="search" placeholder="Search a receipt number…" aria-label="Search receipts">
+      </div>
+
+      <ul class="list" id="history-list" style="margin:12px 0 0">
+        <li class="skeleton">Loading sales…</li>
+      </ul>
+    </div>
+
+    <div data-pane="detail" class="hidden">
+      <div class="modal__head">
+        <button class="btn btn--ghost btn--sm" type="button" data-back="list">‹ Back</button>
+        <h2 id="history-detail-title">Sale</h2>
+        <button class="modal__close" type="button" data-close aria-label="Close">✕</button>
+      </div>
+      <div id="history-detail"></div>
+    </div>
+
+    <form data-pane="void" class="hidden" id="void-form" autocomplete="off" novalidate>
+      <div class="modal__head">
+        <button class="btn btn--ghost btn--sm" type="button" data-back="detail">‹ Back</button>
+        <h2 id="void-title">Remove item</h2>
+        <button class="modal__close" type="button" data-close aria-label="Close">✕</button>
+      </div>
+
+      <p class="muted" id="void-item" style="font-size:13.5px"></p>
+
+      <div class="grid-2">
+        <div class="field">
+          <label for="void-qty">Pieces returned</label>
+          <input class="input" id="void-qty" name="qty" type="number" step="any" min="0.001"
+                 inputmode="decimal" required>
+        </div>
+        <div class="field">
+          <label for="void-price">Refund per piece</label>
+          <input class="input" id="void-price" name="unit_price" type="number" step="0.01" min="0"
+                 inputmode="decimal" required>
+        </div>
+      </div>
+
+      <div class="change-box" id="void-summary">
+        <span>Cash to hand back</span>
+        <span class="change-box__value" id="void-refund">—</span>
+      </div>
+
+      <div class="field" style="margin-top:14px">
+        <label for="void-reason">Reason (optional)</label>
+        <input class="input" id="void-reason" name="reason" maxlength="120"
+               placeholder="Customer changed their mind">
+      </div>
+
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn btn--ghost" type="button" data-back="detail">Cancel</button>
+        <button class="btn btn--danger" type="submit" id="void-submit">Remove &amp; refund</button>
+      </div>
+    </form>
+
+  </div>
+</div>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

@@ -98,6 +98,26 @@ function install_schema(PDO $pdo): void
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_items_transaction ON transaction_items(transaction_id)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_items_product ON transaction_items(product_id)');
 
+    // Audit trail for items removed from a completed sale. The sale itself keeps
+    // the reduced totals, so reports stay net of refunds without extra columns.
+    $pdo->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS sale_voids (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_id  INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+            item_id         INTEGER,
+            product_name    TEXT    NOT NULL,
+            qty             REAL    NOT NULL DEFAULT 0,  -- pieces handed back
+            unit_price      REAL    NOT NULL DEFAULT 0,  -- price per piece refunded
+            refund_amount   REAL    NOT NULL DEFAULT 0,  -- unit_price * qty
+            cost_price      REAL    NOT NULL DEFAULT 0,  -- cost of the returned goods
+            reason          TEXT    NOT NULL DEFAULT '',
+            voided_at       TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    SQL);
+
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_voids_transaction ON sale_voids(transaction_id)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_voids_voided_at ON sale_voids(voided_at)');
+
     $pdo->exec(<<<SQL
         CREATE TABLE IF NOT EXISTS settings (
             key   TEXT PRIMARY KEY,

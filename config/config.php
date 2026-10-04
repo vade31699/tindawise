@@ -16,7 +16,7 @@ define('DEFAULT_CURRENCY', '₱');
 
 // App metadata
 define('APP_NAME', 'Store POS');
-define('APP_VERSION', '1.0.0');
+define('APP_VERSION', '1.1.0');
 
 // Stock is flagged as "low" when the quantity drops to/below this value
 // (can be overridden per install from the Settings page).

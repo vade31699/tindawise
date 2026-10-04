@@ -127,7 +127,6 @@ require __DIR__ . '/includes/header.php';
       <div class="field">
         <label for="f-pack">Pieces per pack</label>
         <input class="input" id="f-pack" name="pack_size" type="number" step="1" min="1" value="1">
-        <div class="field-hint">Used when receiving stock in bulk.</div>
       </div>
     </div>
 
@@ -157,7 +156,6 @@ require __DIR__ . '/includes/header.php';
     <div class="field">
       <label for="f-packs">Packs received</label>
       <input class="input" id="f-packs" name="packs" type="number" step="1" min="1" value="1" inputmode="numeric">
-      <div class="field-hint" id="restock-hint">Each pack adds pieces to stock.</div>
     </div>
 
     <div class="btn-row">
@@ -189,10 +187,6 @@ require __DIR__ . '/includes/header.php';
       <div class="field">
         <label for="import-file">Import inventory (CSV)</label>
         <input class="input" id="import-file" name="file" type="file" accept=".csv,text/csv" required>
-        <div class="field-hint">
-          Columns: <?= e(implode(', ', ['name', 'sku', 'category', 'cost_price', 'selling_price', 'stock_qty', 'pack_size'])) ?>.
-          Rows with an existing SKU are updated.
-        </div>
       </div>
 
       <div class="field">

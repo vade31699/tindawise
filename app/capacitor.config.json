@@ -1,0 +1,17 @@
+{
+  "appId": "com.tindawise.pos",
+  "appName": "Store POS",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": true
+  },
+  "plugins": {
+    "CapacitorSQLite": {
+      "androidIsEncryption": false,
+      "iosDatabaseLocation": "Library/CapacitorDatabase",
+      "androidDatabaseLocation": "databases",
+      "sqliteWASMPath": "public"
+    }
+  }
+}

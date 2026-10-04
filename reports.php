@@ -140,7 +140,6 @@ require __DIR__ . '/includes/header.php';
     <div class="field">
       <label for="import-file">Import inventory (CSV)</label>
       <input class="input" id="import-file" name="file" type="file" accept=".csv,text/csv" required>
-      <div class="field-hint">Existing SKUs are updated, new rows are added.</div>
     </div>
     <div class="btn-row">
       <a class="btn btn--ghost" href="api.php?action=csv_template">⬇ Template</a>

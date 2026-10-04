@@ -57,7 +57,6 @@ require __DIR__ . '/includes/header.php';
 
 <div class="btn-row" style="margin-bottom:14px">
   <a class="btn" href="pos.php">🛒 New sale</a>
-  <a class="btn btn--ghost" href="inventory.php?new=1">＋ Add item</a>
 </div>
 
 <section class="card">
@@ -137,7 +136,7 @@ require __DIR__ . '/includes/header.php';
       everything is stored offline in this device's SQLite database.
     </p>
     <div class="btn-row">
-      <a class="btn" href="inventory.php?new=1">＋ Add item</a>
+      <a class="btn" href="inventory.php">＋ Go to Inventory</a>
       <a class="btn btn--ghost" href="reports.php#csv">Import CSV</a>
     </div>
   </section>

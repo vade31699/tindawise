@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#3f5a8a">
+<meta name="format-detection" content="telephone=no">
+<title>Inventory</title>
+<link rel="stylesheet" href="assets/css/app.css?v=1.1.0">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-header__titles">
+    <h1>Inventory</h1>
+    <span>Items, costs and stock on hand</span>
+  </div>
+  <a class="app-header__action" href="settings.html" aria-label="Settings" title="Settings">⚙️</a>
+</header>
+
+<main class="page">
+
+<section class="kpi-grid" id="inventory-kpis">
+  <div class="kpi">
+    <div class="kpi__label">Items</div>
+    <div class="kpi__value" data-kpi="count">—</div>
+    <div class="kpi__note">in the catalog</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi__label">Stock value</div>
+    <div class="kpi__value" data-kpi="stock_value">—</div>
+    <div class="kpi__note">at cost price</div>
+  </div>
+  <div class="kpi kpi--profit">
+    <div class="kpi__label">Sell value</div>
+    <div class="kpi__value" data-kpi="sell_value">—</div>
+    <div class="kpi__note" data-kpi="potential">—</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi__label">Needs restocking</div>
+    <div class="kpi__value" data-kpi="alerts">—</div>
+    <div class="kpi__note" data-kpi="alerts-note">low or out of stock</div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="search-wrap">
+    <input class="input input--search" type="search" id="inventory-search"
+           placeholder="Search item name, SKU or category…" autocomplete="off"
+           inputmode="search" aria-label="Search items">
+  </div>
+
+  <div class="pill-row" id="status-filters" style="margin-top:12px">
+    <button class="pill" data-status="all">All</button>
+    <button class="pill" data-status="instock">In stock</button>
+    <button class="pill" data-status="low">Low stock</button>
+    <button class="pill" data-status="out">Out of stock</button>
+  </div>
+
+  <div class="row" style="margin-top:12px">
+    <select class="select grow" id="category-filter" aria-label="Filter by category">
+      <option value="">All categories</option>
+    </select>
+  </div>
+</section>
+
+<div class="btn-row" style="margin-bottom:14px">
+  <button class="btn" id="btn-add-item" type="button">＋ New item</button>
+  <button class="btn btn--ghost" id="btn-open-csv" type="button">⇅ CSV</button>
+</div>
+
+<section class="card card--flush">
+  <div class="card__head card__head--pad">
+    <h2>Products</h2>
+    <span class="badge badge--muted" id="result-count">Loading…</span>
+  </div>
+  <ul class="list" id="product-list">
+    <li class="skeleton">Loading items…</li>
+  </ul>
+</section>
+
+<!-- ================================================== add / edit item modal -->
+<div class="modal" id="item-modal" role="dialog" aria-modal="true" aria-labelledby="item-modal-title">
+  <form class="modal__sheet" id="item-form" autocomplete="off">
+    <div class="modal__head">
+      <h2 id="item-modal-title">New item</h2>
+      <button class="modal__close" type="button" data-close aria-label="Close">✕</button>
+    </div>
+
+    <input type="hidden" name="id" value="">
+
+    <div class="field">
+      <label for="f-name">Item name *</label>
+      <input class="input" id="f-name" name="name" required placeholder="e.g. Bear Brand 300ml">
+    </div>
+
+    <div class="grid-2">
+      <div class="field">
+        <label for="f-sku">SKU / barcode</label>
+        <input class="input" id="f-sku" name="sku" placeholder="optional">
+      </div>
+      <div class="field">
+        <label for="f-category">Category</label>
+        <input class="input" id="f-category" name="category" list="category-options" placeholder="e.g. Drinks">
+        <datalist id="category-options"></datalist>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="field">
+        <label for="f-cost">Buying price (per pc) *</label>
+        <input class="input" id="f-cost" name="cost_price" type="number" step="0.01" min="0"
+               inputmode="decimal" required placeholder="0.00">
+      </div>
+      <div class="field">
+        <label for="f-selling">Selling price (per pc) *</label>
+        <input class="input" id="f-selling" name="selling_price" type="number" step="0.01" min="0"
+               inputmode="decimal" required placeholder="0.00">
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="field">
+        <label for="f-stock">Stock on hand (pcs)</label>
+        <input class="input" id="f-stock" name="stock_qty" type="number" step="1" min="0"
+               inputmode="decimal" value="0">
+      </div>
+      <div class="field">
+        <label for="f-pack">Pieces per pack</label>
+        <input class="input" id="f-pack" name="pack_size" type="number" step="1" min="1" value="1">
+      </div>
+    </div>
+
+    <div class="change-box" id="margin-preview">
+      <span>Profit per piece</span>
+      <span class="change-box__value" data-margin="per-piece">—</span>
+    </div>
+
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn--ghost" type="button" data-close>Cancel</button>
+      <button class="btn" type="submit" id="item-submit">Save item</button>
+    </div>
+  </form>
+</div>
+
+<!-- ======================================================= restock modal -->
+<div class="modal" id="restock-modal" role="dialog" aria-modal="true" aria-labelledby="restock-title">
+  <form class="modal__sheet" id="restock-form" autocomplete="off">
+    <div class="modal__head">
+      <h2 id="restock-title">Receive stock</h2>
+      <button class="modal__close" type="button" data-close aria-label="Close">✕</button>
+    </div>
+
+    <input type="hidden" name="id" value="">
+    <p class="muted" id="restock-item" style="font-size:13.5px"></p>
+
+    <div class="field">
+      <label for="f-packs">Packs received</label>
+      <input class="input" id="f-packs" name="packs" type="number" step="1" min="1" value="1" inputmode="numeric">
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn--ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn--profit" type="submit" id="restock-submit">Add to stock</button>
+    </div>
+  </form>
+</div>
+
+<!-- ========================================================= csv modal -->
+<div class="modal" id="csv-modal" role="dialog" aria-modal="true" aria-labelledby="csv-title">
+  <div class="modal__sheet">
+    <div class="modal__head">
+      <h2 id="csv-title">CSV import / export</h2>
+      <button class="modal__close" type="button" data-close aria-label="Close">✕</button>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Export</span>
+      <div class="btn-row">
+        <button class="btn btn--ghost" type="button" id="btn-export-products">⬇ Inventory CSV</button>
+        <button class="btn btn--ghost" type="button" id="btn-export-sales">⬇ Sales CSV</button>
+      </div>
+    </div>
+
+    <hr>
+
+    <form id="import-form">
+      <div class="field">
+        <label for="import-file">Import inventory (CSV)</label>
+        <input class="input" id="import-file" name="file" type="file" accept=".csv,text/csv" required>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Import mode</span>
+        <label class="row" style="gap:8px;font-size:14px">
+          <input type="radio" name="mode" value="merge" checked> Add &amp; update existing items
+        </label>
+        <label class="row" style="gap:8px;font-size:14px;margin-top:6px">
+          <input type="radio" name="mode" value="replace"> Replace the whole catalog
+        </label>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn--ghost" type="button" id="btn-csv-template">⬇ Template</button>
+        <button class="btn" type="submit" id="import-submit">Upload CSV</button>
+      </div>
+    </form>
+
+    <div id="import-result" class="hidden" style="margin-top:14px"></div>
+  </div>
+</div>
+
+<!-- ====================================================== confirm modal -->
+<div class="modal" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+  <div class="modal__sheet">
+    <div class="modal__head">
+      <h2 id="confirm-title">Delete item?</h2>
+      <button class="modal__close" type="button" data-close aria-label="Close">✕</button>
+    </div>
+    <p class="muted" id="confirm-text" style="font-size:14px"></p>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn--ghost" type="button" data-close>Keep item</button>
+      <button class="btn btn--danger" type="button" id="confirm-delete">Delete</button>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<nav class="bottom-nav" aria-label="Main navigation">
+  <a href="index.html">
+    <span class="nav-icon" aria-hidden="true">🏠</span>
+    <span>Dashboard</span>
+  </a>
+  <a href="inventory.html" class="is-active" aria-current="page">
+    <span class="nav-icon" aria-hidden="true">📦</span>
+    <span>Inventory</span>
+  </a>
+  <a href="pos.html">
+    <span class="nav-icon" aria-hidden="true">🛒</span>
+    <span>POS</span>
+  </a>
+  <a href="reports.html">
+    <span class="nav-icon" aria-hidden="true">📊</span>
+    <span>Reports</span>
+  </a>
+</nav>
+
+<div class="toast-host" id="toast-host" role="status" aria-live="polite"></div>
+
+<script>window.BOOT = { page: 'inventory' };</script>
+<script src="assets/js/backend.js?v=1.1.0"></script>
+<script src="assets/js/app.js?v=1.1.0"></script>
+<script src="assets/js/boot.js?v=1.1.0"></script>
+</body>
+</html>

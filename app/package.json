@@ -1,0 +1,27 @@
+{
+  "name": "tindawise-pos",
+  "version": "1.1.1",
+  "private": true,
+  "description": "Offline Store POS — Capacitor Android app with an on-device SQLite database",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "sync": "npm run build && cap sync android",
+    "apk": "npm run sync && cd android && gradlew assembleDebug"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "@capacitor-community/sqlite": "^6.0.2",
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/filesystem": "^6.0.2",
+    "@capacitor/share": "^6.0.2"
+  },
+  "allowScripts": {
+    "esbuild@0.24.2": true
+  }
+}

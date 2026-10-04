@@ -41,7 +41,6 @@ require __DIR__ . '/includes/header.php';
       <label for="low_stock">Low stock level</label>
       <input class="input" id="low_stock" name="low_stock" type="number" step="1" min="0"
              value="<?= e(setting('low_stock')) ?>">
-      <div class="field-hint">Warn when stock drops to this many pieces.</div>
     </div>
   </div>
 
@@ -89,10 +88,6 @@ require __DIR__ . '/includes/header.php';
     <button class="btn btn--ghost" type="button" id="btn-backup">💾 Back up database</button>
     <button class="btn btn--ghost" type="button" id="btn-export-products">⬇ Inventory CSV</button>
   </div>
-  <p class="field-hint" style="margin-top:10px">
-    Everything lives in this single SQLite file on your device. Copy it to a USB drive or
-    cloud-sync the folder to keep a backup — no server or internet connection is involved.
-  </p>
 </section>
 
 <section class="card">

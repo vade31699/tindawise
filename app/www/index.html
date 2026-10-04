@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#3f5a8a">
+<meta name="format-detection" content="telephone=no">
+<title>Dashboard</title>
+<link rel="stylesheet" href="assets/css/app.css?v=1.1.0">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-header__titles">
+    <h1>Dashboard</h1>
+    <span>&nbsp;</span>
+  </div>
+  <a class="app-header__action" href="settings.html" aria-label="Settings" title="Settings">⚙️</a>
+</header>
+
+<main class="page">
+
+<section class="kpi-grid">
+  <div class="kpi kpi--primary">
+    <div class="kpi__label">Today's sales</div>
+    <div class="kpi__value" id="kpi-revenue">—</div>
+    <div class="kpi__note" id="kpi-revenue-note">—</div>
+  </div>
+  <div class="kpi kpi--profit">
+    <div class="kpi__label">Profit today</div>
+    <div class="kpi__value" id="kpi-profit">—</div>
+    <div class="kpi__note" id="kpi-profit-note">—</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi__label">This week</div>
+    <div class="kpi__value" id="week-revenue">—</div>
+    <div class="kpi__note">Profit <span id="week-profit">—</span></div>
+  </div>
+  <div class="kpi">
+    <div class="kpi__label">This month</div>
+    <div class="kpi__value" id="month-revenue">—</div>
+    <div class="kpi__note">Profit <span id="month-profit">—</span></div>
+  </div>
+</section>
+
+<div class="btn-row" style="margin-bottom:14px">
+  <a class="btn" href="pos.html">🛒 New sale</a>
+</div>
+
+<section class="card">
+  <div class="card__head">
+    <h2>Last 7 days</h2>
+    <span class="muted" style="font-size:12px">Profit <span id="week-chart-profit">—</span></span>
+  </div>
+  <div class="chart" id="week-chart">
+    <div class="skeleton">Loading…</div>
+  </div>
+</section>
+
+<section class="card card--flush">
+  <div class="card__head card__head--pad">
+    <h2>Stock alerts</h2>
+    <a class="badge badge--muted" href="inventory.html?status=low">Low stock</a>
+  </div>
+  <ul class="list" id="low-stock-list">
+    <li class="skeleton">Loading…</li>
+  </ul>
+</section>
+
+<section class="card card--flush">
+  <div class="card__head card__head--pad">
+    <h2>Recent sales</h2>
+    <a class="badge badge--muted" href="reports.html">Reports</a>
+  </div>
+  <ul class="list" id="recent-sales">
+    <li class="skeleton">Loading…</li>
+  </ul>
+</section>
+
+<section class="card hidden" id="first-run-hint">
+  <div class="card__head"><h2>First time here?</h2></div>
+  <p class="muted" style="font-size:13.5px">
+    Add your items one by one in Inventory, or bulk-upload your price list from a CSV file —
+    everything is stored offline in this device's own SQLite database.
+  </p>
+  <div class="btn-row">
+    <a class="btn" href="inventory.html">＋ Go to Inventory</a>
+    <a class="btn btn--ghost" href="reports.html#csv">Import CSV</a>
+  </div>
+</section>
+
+</main>
+
+<nav class="bottom-nav" aria-label="Main navigation">
+  <a href="index.html" class="is-active" aria-current="page">
+    <span class="nav-icon" aria-hidden="true">🏠</span>
+    <span>Dashboard</span>
+  </a>
+  <a href="inventory.html">
+    <span class="nav-icon" aria-hidden="true">📦</span>
+    <span>Inventory</span>
+  </a>
+  <a href="pos.html">
+    <span class="nav-icon" aria-hidden="true">🛒</span>
+    <span>POS</span>
+  </a>
+  <a href="reports.html">
+    <span class="nav-icon" aria-hidden="true">📊</span>
+    <span>Reports</span>
+  </a>
+</nav>
+
+<div class="toast-host" id="toast-host" role="status" aria-live="polite"></div>
+
+<script>window.BOOT = { page: 'home' };</script>
+<script src="assets/js/backend.js?v=1.1.0"></script>
+<script src="assets/js/app.js?v=1.1.0"></script>
+<script src="assets/js/boot.js?v=1.1.0"></script>
+</body>
+</html>

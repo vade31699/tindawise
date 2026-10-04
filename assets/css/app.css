@@ -269,7 +269,6 @@ body.has-cart-bar .page { padding-bottom: calc(var(--nav-height) + 96px); }
 }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.field-hint { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
 
 /* --------------------------------------------------------------- list rows */
 .list { list-style: none; margin: 0; padding: 0; }
@@ -358,7 +357,23 @@ table.data .profit { color: var(--profit); font-weight: 650; }
 .chart__label { font-size: 10px; color: var(--muted); white-space: nowrap; }
 
 /* -------------------------------------------------------------- POS module */
-.pos-search { margin-bottom: 12px; }
+/* Search and the history button share one row, both 46px tall so they line up. */
+.pos-search { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.pos-search .search-wrap { flex: 1 1 auto; min-width: 0; }
+.pos-history-btn { flex: 0 0 auto; white-space: nowrap; }
+/* Checkout trigger. Offset by the nav height so the nav always stays below it. */
+.cart-bar {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(var(--nav-height) + 14px);
+  max-width: 688px;
+  margin: 0 auto;
+  z-index: 45;
+  min-height: 54px;
+  justify-content: space-between;
+  padding: 0 18px;
+}
 .pos-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
@@ -569,6 +584,7 @@ table.data .profit { color: var(--profit); font-weight: 650; }
 
 /* ------------------------------------------------------- larger viewports  */
 @media (min-width: 640px) {
+  :root { --nav-height: 56px; }
   .kpi-grid { grid-template-columns: repeat(4, 1fr); }
   .page { padding-bottom: 40px; }
   .bottom-nav {
@@ -579,7 +595,18 @@ table.data .profit { color: var(--profit); font-weight: 650; }
     border-radius: 0 0 var(--radius) var(--radius);
     border-bottom: 1px solid var(--line);
   }
-  .bottom-nav a { min-height: 56px; flex-direction: row; gap: 8px; font-size: 13px; }
+  .bottom-nav a { min-height: var(--nav-height); flex-direction: row; gap: 8px; font-size: 13px; }
+
+  /* POS keeps the nav pinned: its cart bar is fixed directly above the nav. */
+  body.has-cart-bar .bottom-nav {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    margin: 0 auto;
+    border-radius: 0;
+    border-bottom: 0;
+  }
+
   .modal { align-items: center; }
   .modal__sheet { border-radius: var(--radius-lg); }
 }

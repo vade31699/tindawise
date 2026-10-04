@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#3f5a8a">
+<meta name="format-detection" content="telephone=no">
+<title>Reports</title>
+<link rel="stylesheet" href="assets/css/app.css?v=1.1.0">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-header__titles">
+    <h1>Reports</h1>
+    <span>Revenue, profit and best sellers</span>
+  </div>
+  <a class="app-header__action" href="settings.html" aria-label="Settings" title="Settings">⚙️</a>
+</header>
+
+<main class="page">
+
+<section class="card">
+  <div class="field mb-0">
+    <span class="field-label">Date range</span>
+    <div class="pill-row" id="range-pills">
+      <button class="pill" data-range="today">Today</button>
+      <button class="pill" data-range="yesterday">Yesterday</button>
+      <button class="pill is-active" data-range="week">Last 7 days</button>
+      <button class="pill" data-range="month">This month</button>
+      <button class="pill" data-range="custom">Custom</button>
+    </div>
+  </div>
+
+  <div class="grid-2 hidden" id="custom-range" style="margin-top:12px">
+    <div class="field mb-0">
+      <label for="from-date">From</label>
+      <input class="input" type="date" id="from-date">
+    </div>
+    <div class="field mb-0">
+      <label for="to-date">To</label>
+      <input class="input" type="date" id="to-date">
+    </div>
+  </div>
+
+  <div class="row row--between" style="margin-top:12px">
+    <span class="muted" style="font-size:12.5px" id="range-label">Loading…</span>
+    <button class="btn btn--sm btn--ghost" type="button" id="btn-refresh">↻ Refresh</button>
+  </div>
+</section>
+
+<section class="kpi-grid" id="report-kpis">
+  <div class="kpi kpi--primary">
+    <div class="kpi__label">Revenue</div>
+    <div class="kpi__value" data-kpi="revenue">—</div>
+    <div class="kpi__note" data-kpi="revenue-note">—</div>
+  </div>
+  <div class="kpi kpi--profit">
+    <div class="kpi__label">Net profit</div>
+    <div class="kpi__value" data-kpi="profit">—</div>
+    <div class="kpi__note" data-kpi="profit-note">—</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi__label">Cost of goods</div>
+    <div class="kpi__value" data-kpi="cost">—</div>
+    <div class="kpi__note">what you paid for the sold stock</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi__label">Transactions</div>
+    <div class="kpi__value" data-kpi="transactions">—</div>
+    <div class="kpi__note" data-kpi="average">—</div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card__head">
+    <h2>Sales per day</h2>
+    <span class="muted" style="font-size:12px" id="chart-note"></span>
+  </div>
+  <div class="chart" id="report-chart"><div class="skeleton">Loading…</div></div>
+</section>
+
+<section class="card card--flush">
+  <div class="card__head card__head--pad"><h2>Daily breakdown</h2></div>
+  <div class="table-wrap">
+    <table class="data" id="daily-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th class="num">Sales</th>
+          <th class="num">Items</th>
+          <th class="num">Revenue</th>
+          <th class="num">Profit</th>
+        </tr>
+      </thead>
+      <tbody><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card card--flush">
+  <div class="card__head card__head--pad"><h2>Best sellers</h2></div>
+  <div class="table-wrap">
+    <table class="data" id="top-table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th class="num">Qty</th>
+          <th class="num">Revenue</th>
+          <th class="num">Profit</th>
+        </tr>
+      </thead>
+      <tbody><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card card--flush">
+  <div class="card__head card__head--pad"><h2>Latest transactions</h2></div>
+  <ul class="list" id="sales-list"><li class="skeleton">Loading…</li></ul>
+</section>
+
+<section class="card" id="csv">
+  <div class="card__head"><h2>CSV import / export</h2></div>
+  <p class="muted" style="font-size:13px">
+    Export your performance log or bulk-load an inventory list. Files are read
+    and written locally on this device — no internet needed.
+  </p>
+
+  <div class="field">
+    <span class="field-label">Export</span>
+    <div class="btn-row" style="margin-bottom:10px">
+      <button class="btn btn--ghost" type="button" id="btn-export-sales">⬇ Sales (range)</button>
+      <button class="btn btn--ghost" type="button" id="btn-export-items">⬇ Line items</button>
+    </div>
+    <button class="btn btn--ghost btn--block" type="button" id="btn-export-products">⬇ Full inventory</button>
+  </div>
+
+  <hr>
+
+  <form id="import-form">
+    <div class="field">
+      <label for="import-file">Import inventory (CSV)</label>
+      <input class="input" id="import-file" name="file" type="file" accept=".csv,text/csv" required>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn--ghost" type="button" id="btn-csv-template">⬇ Template</button>
+      <button class="btn" type="submit" id="import-submit">Upload CSV</button>
+    </div>
+  </form>
+
+  <div id="import-result" class="hidden" style="margin-top:14px"></div>
+</section>
+
+</main>
+
+<nav class="bottom-nav" aria-label="Main navigation">
+  <a href="index.html">
+    <span class="nav-icon" aria-hidden="true">🏠</span>
+    <span>Dashboard</span>
+  </a>
+  <a href="inventory.html">
+    <span class="nav-icon" aria-hidden="true">📦</span>
+    <span>Inventory</span>
+  </a>
+  <a href="pos.html">
+    <span class="nav-icon" aria-hidden="true">🛒</span>
+    <span>POS</span>
+  </a>
+  <a href="reports.html" class="is-active" aria-current="page">
+    <span class="nav-icon" aria-hidden="true">📊</span>
+    <span>Reports</span>
+  </a>
+</nav>
+
+<div class="toast-host" id="toast-host" role="status" aria-live="polite"></div>
+
+<script>window.BOOT = { page: 'reports' };</script>
+<script src="assets/js/backend.js?v=1.1.0"></script>
+<script src="assets/js/app.js?v=1.1.0"></script>
+<script src="assets/js/boot.js?v=1.1.0"></script>
+</body>
+</html>

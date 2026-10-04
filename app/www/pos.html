@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#3f5a8a">
+<meta name="format-detection" content="telephone=no">
+<title>Point of sale</title>
+<link rel="stylesheet" href="assets/css/app.css?v=1.1.0">
+</head>
+<body class="has-cart-bar">
+
+<header class="app-header">
+  <div class="app-header__titles">
+    <h1>Point of sale</h1>
+    <span>Tap an item to add it to the cart</span>
+  </div>
+  <a class="app-header__action" href="settings.html" aria-label="Settings" title="Settings">⚙️</a>
+</header>
+
+<main class="page">
+
+<section class="pos-search">
+  <div class="search-wrap">
+    <input class="input input--search" type="search" id="pos-search" autocomplete="off"
+           inputmode="search" placeholder="Search an item to sell…" aria-label="Search items">
+  </div>
+  <button class="btn btn--ghost pos-history-btn" id="btn-history" type="button">🧾 Sales history</button>
+</section>
+
+<div class="pill-row" id="pos-filters" style="margin-bottom:12px">
+  <button class="pill is-active" data-filter="all">All items</button>
+  <button class="pill" data-filter="available">In stock</button>
+</div>
+
+<section class="pos-grid" id="pos-grid">
+  <div class="skeleton" style="grid-column:1/-1">Loading your items…</div>
+</section>
+
+<!-- Cart summary bar, sits above the bottom navigation. -->
+<button class="btn btn--block cart-bar" id="cart-bar" type="button">
+  <span id="cart-bar-count">Cart is empty</span>
+  <span id="cart-bar-total">—</span>
+</button>
+
+<!-- ======================================================== cart / checkout -->
+<div class="modal" id="cart-modal" role="dialog" aria-modal="true" aria-labelledby="cart-title">
+  <div class="modal__sheet">
+    <div class="modal__head">
+      <h2 id="cart-title">Checkout</h2>
+      <button class="modal__close" type="button" data-close aria-label="Close">✕</button>
+    </div>
+
+    <ul class="list" id="cart-lines" style="margin:-6px 0 0"></ul>
+
+    <div class="card" style="box-shadow:none;border:1px solid var(--line);margin:14px 0 0">
+      <div class="totals">
+        <div class="totals__row"><span class="muted">Items</span><span id="sum-items">0</span></div>
+        <div class="totals__row"><span class="muted">Subtotal (cost)</span><span id="sum-cost">—</span></div>
+        <div class="totals__row totals__row--profit"><span>Profit</span><span id="sum-profit">—</span></div>
+        <div class="totals__row totals__row--grand"><span>Total</span><span id="sum-total">—</span></div>
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:14px">
+      <label for="cash-received">Cash received</label>
+      <input class="input" id="cash-received" type="number" step="0.01" min="0" inputmode="decimal"
+             placeholder="0.00" value="">
+      <div class="quick-cash" id="quick-cash"></div>
+    </div>
+
+    <div class="change-box" id="change-box">
+      <span>Change</span>
+      <span class="change-box__value" id="change-value">—</span>
+    </div>
+
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn--ghost" type="button" id="btn-clear-cart">Clear</button>
+      <button class="btn btn--profit" type="button" id="btn-checkout">Complete sale</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================== receipt  -->
+<div class="modal" id="receipt-modal" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+  <div class="modal__sheet">
+    <div class="modal__head">
+      <h2 id="receipt-title">Sale complete</h2>
+      <button class="modal__close" type="button" data-close aria-label="Close">✕</button>
+    </div>
+
+    <div class="receipt" id="receipt-body"></div>
+
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn--ghost" type="button" onclick="window.print()">🖨 Print</button>
+      <button class="btn" type="button" id="btn-new-sale">New sale</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================ purchase history / item removal -->
+<!-- One sheet with three panes (list / detail / remove) so only a single modal
+     is ever open and the body scroll lock stays correct. -->
+<div class="modal" id="history-modal" role="dialog" aria-modal="true" aria-labelledby="history-title">
+  <div class="modal__sheet">
+
+    <div data-pane="list">
+      <div class="modal__head">
+        <h2 id="history-title">Purchase history</h2>
+        <button class="modal__close" type="button" data-close aria-label="Close">✕</button>
+      </div>
+
+      <div class="search-wrap">
+        <input class="input input--search" type="search" id="history-search" autocomplete="off"
+               inputmode="search" placeholder="Search a receipt number…" aria-label="Search receipts">
+      </div>
+
+      <ul class="list" id="history-list" style="margin:12px 0 0">
+        <li class="skeleton">Loading sales…</li>
+      </ul>
+    </div>
+
+    <div data-pane="detail" class="hidden">
+      <div class="modal__head">
+        <button class="btn btn--ghost btn--sm" type="button" data-back="list">‹ Back</button>
+        <h2 id="history-detail-title">Sale</h2>
+        <button class="modal__close" type="button" data-close aria-label="Close">✕</button>
+      </div>
+      <div id="history-detail"></div>
+    </div>
+
+    <form data-pane="void" class="hidden" id="void-form" autocomplete="off" novalidate>
+      <div class="modal__head">
+        <button class="btn btn--ghost btn--sm" type="button" data-back="detail">‹ Back</button>
+        <h2 id="void-title">Remove item</h2>
+        <button class="modal__close" type="button" data-close aria-label="Close">✕</button>
+      </div>
+
+      <p class="muted" id="void-item" style="font-size:13.5px"></p>
+
+      <div class="grid-2">
+        <div class="field">
+          <label for="void-qty">Pieces returned</label>
+          <input class="input" id="void-qty" name="qty" type="number" step="any" min="0.001"
+                 inputmode="decimal" required>
+        </div>
+        <div class="field">
+          <label for="void-price">Refund per piece</label>
+          <input class="input" id="void-price" name="unit_price" type="number" step="0.01" min="0"
+                 inputmode="decimal" required>
+        </div>
+      </div>
+
+      <div class="change-box" id="void-summary">
+        <span>Cash to hand back</span>
+        <span class="change-box__value" id="void-refund">—</span>
+      </div>
+
+      <div class="field" style="margin-top:14px">
+        <label for="void-reason">Reason (optional)</label>
+        <input class="input" id="void-reason" name="reason" maxlength="120"
+               placeholder="Customer changed their mind">
+      </div>
+
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn btn--ghost" type="button" data-back="detail">Cancel</button>
+        <button class="btn btn--danger" type="submit" id="void-submit">Remove &amp; refund</button>
+      </div>
+    </form>
+
+  </div>
+</div>
+
+</main>
+
+<nav class="bottom-nav" aria-label="Main navigation">
+  <a href="index.html">
+    <span class="nav-icon" aria-hidden="true">🏠</span>
+    <span>Dashboard</span>
+  </a>
+  <a href="inventory.html">
+    <span class="nav-icon" aria-hidden="true">📦</span>
+    <span>Inventory</span>
+  </a>
+  <a href="pos.html" class="is-active" aria-current="page">
+    <span class="nav-icon" aria-hidden="true">🛒</span>
+    <span>POS</span>
+  </a>
+  <a href="reports.html">
+    <span class="nav-icon" aria-hidden="true">📊</span>
+    <span>Reports</span>
+  </a>
+</nav>
+
+<div class="toast-host" id="toast-host" role="status" aria-live="polite"></div>
+
+<script>window.BOOT = { page: 'pos' };</script>
+<script src="assets/js/backend.js?v=1.1.0"></script>
+<script src="assets/js/app.js?v=1.1.0"></script>
+<script src="assets/js/boot.js?v=1.1.0"></script>
+</body>
+</html>
