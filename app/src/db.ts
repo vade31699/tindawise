@@ -57,6 +57,12 @@ async function openAndMigrate(): Promise<SQLiteDBConnection> {
   }
 
   try {
+    await ensureColumns(conn);
+  } catch (err) {
+    throw new Error(`Could not upgrade the database: ${message(err)}`);
+  }
+
+  try {
     await seedDefaults(conn);
   } catch (err) {
     throw new Error(`Could not write the default settings: ${message(err)}`);
@@ -231,6 +237,7 @@ async function installSchema(conn: SQLiteDBConnection): Promise<void> {
         selling_price REAL    NOT NULL DEFAULT 0,
         stock_qty     REAL    NOT NULL DEFAULT 0,
         pack_size     INTEGER NOT NULL DEFAULT 1,
+        pack_price    REAL    NOT NULL DEFAULT 0,
         created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
         updated_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
     );
@@ -261,7 +268,8 @@ async function installSchema(conn: SQLiteDBConnection): Promise<void> {
         selling_price REAL   NOT NULL DEFAULT 0,
         discount     REAL    NOT NULL DEFAULT 0,
         line_total   REAL    NOT NULL DEFAULT 0,
-        line_profit  REAL    NOT NULL DEFAULT 0
+        line_profit  REAL    NOT NULL DEFAULT 0,
+        unit         TEXT    NOT NULL DEFAULT 'pc'
     );
     CREATE INDEX IF NOT EXISTS idx_items_transaction ON transaction_items(transaction_id);
     CREATE INDEX IF NOT EXISTS idx_items_product ON transaction_items(product_id);
@@ -276,6 +284,7 @@ async function installSchema(conn: SQLiteDBConnection): Promise<void> {
         refund_amount   REAL    NOT NULL DEFAULT 0,
         cost_price      REAL    NOT NULL DEFAULT 0,
         reason          TEXT    NOT NULL DEFAULT '',
+        unit            TEXT    NOT NULL DEFAULT 'pc',
         voided_at       TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
     );
     CREATE INDEX IF NOT EXISTS idx_voids_transaction ON sale_voids(transaction_id);
@@ -286,6 +295,29 @@ async function installSchema(conn: SQLiteDBConnection): Promise<void> {
         value TEXT NOT NULL
     );
   `);
+}
+
+/**
+ * Adds columns introduced after a table was first created. CREATE TABLE IF
+ * NOT EXISTS cannot change an existing table, so without this an upgraded app
+ * would crash on the first INSERT that mentions the new column.
+ */
+const COLUMN_UPGRADES: Array<{ table: string; column: string; definition: string }> = [
+  { table: 'products', column: 'pack_price', definition: 'REAL NOT NULL DEFAULT 0' },
+  { table: 'transaction_items', column: 'unit', definition: "TEXT NOT NULL DEFAULT 'pc'" },
+  { table: 'sale_voids', column: 'unit', definition: "TEXT NOT NULL DEFAULT 'pc'" },
+];
+
+async function ensureColumns(conn: SQLiteDBConnection): Promise<void> {
+  for (const upgrade of COLUMN_UPGRADES) {
+    const res = await conn.query(`PRAGMA table_info(${upgrade.table})`);
+    const columns = (res.values ?? []).map((row) => String((row as Row).name ?? '').toLowerCase());
+    if (!columns.includes(upgrade.column.toLowerCase())) {
+      await conn.execute(
+        `ALTER TABLE ${upgrade.table} ADD COLUMN ${upgrade.column} ${upgrade.definition}`
+      );
+    }
+  }
 }
 
 /** Writes the default settings rows the very first time the app runs. */

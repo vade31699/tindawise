@@ -140,6 +140,7 @@ async function productsList({ query }: Ctx): Promise<any> {
       selling_price: selling,
       stock_qty: stockQty,
       pack_size: Number(row.pack_size),
+      pack_price: round(Number(row.pack_price ?? 0)),
       unit_profit: round(selling - cost),
       margin: selling > 0 ? round(((selling - cost) / selling) * 100, 1) : 0,
       status: state.key,
@@ -181,7 +182,8 @@ async function productSave({ body }: Ctx): Promise<any> {
   if (id > 0) {
     const res = await exec(
       `UPDATE products SET name = ?, sku = ?, category = ?, cost_price = ?,
-              selling_price = ?, stock_qty = ?, pack_size = ?, updated_at = datetime('now','localtime')
+              selling_price = ?, stock_qty = ?, pack_size = ?, pack_price = ?,
+              updated_at = datetime('now','localtime')
        WHERE id = ?`,
       [
         data.name,
@@ -191,6 +193,7 @@ async function productSave({ body }: Ctx): Promise<any> {
         data.selling_price,
         data.stock_qty,
         data.pack_size,
+        data.pack_price,
         id,
       ]
     );
@@ -202,8 +205,8 @@ async function productSave({ body }: Ctx): Promise<any> {
   }
 
   const res = await exec(
-    `INSERT INTO products (name, sku, category, cost_price, selling_price, stock_qty, pack_size)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (name, sku, category, cost_price, selling_price, stock_qty, pack_size, pack_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.name,
       data.sku,
@@ -212,6 +215,7 @@ async function productSave({ body }: Ctx): Promise<any> {
       data.selling_price,
       data.stock_qty,
       data.pack_size,
+      data.pack_price,
     ]
   );
 
@@ -285,13 +289,21 @@ async function posCheckout({ body }: Ctx): Promise<any> {
     let count = 0;
     const lines: any[] = [];
 
-    // One row per product: merge duplicate taps into a single quantity.
-    const merged = new Map<number, number>();
+    // One row per product+unit: merge duplicate taps into a single quantity,
+    // but keep a per-piece line and a per-pack line apart.
+    const merged = new Map<string, { productId: number; unit: 'pc' | 'pack'; qty: number }>();
     for (const item of items) {
       const productId = Math.trunc(Number(item?.product_id ?? 0));
       const quantity = round(Number(item?.qty ?? 0), 3);
+      const unit: 'pc' | 'pack' = item?.unit === 'pack' ? 'pack' : 'pc';
       if (productId <= 0 || !(quantity > 0)) continue;
-      merged.set(productId, (merged.get(productId) ?? 0) + quantity);
+      const key = `${productId}:${unit}`;
+      const existing = merged.get(key);
+      if (existing) {
+        existing.qty = round(existing.qty + quantity, 3);
+      } else {
+        merged.set(key, { productId, unit, qty: quantity });
+      }
     }
 
     if (merged.size === 0) {
@@ -309,29 +321,48 @@ async function posCheckout({ body }: Ctx): Promise<any> {
     );
     const transactionId = inserted.lastId;
 
-    for (const [productId, quantity] of merged) {
+    for (const line of merged.values()) {
+      const { productId, unit } = line;
+      const quantity = line.qty;
+
       const product = await one('SELECT * FROM products WHERE id = ?', [productId]);
       if (!product) {
         throw new ValidationError('An item in the cart no longer exists.');
       }
 
+      const packSize = Math.max(1, Math.trunc(Number(product.pack_size ?? 1)));
+      const packPrice = round(Number(product.pack_price ?? 0));
+      const isPack = unit === 'pack';
+
+      if (isPack && !(packPrice > 0)) {
+        throw new ValidationError(`${product.name} is not sold per pack — no price per pack is set.`);
+      }
+
+      // Stock is always counted in single pieces, whichever unit was sold.
+      const piecesSold = round(quantity * (isPack ? packSize : 1), 3);
       const available = Number(product.stock_qty);
-      if (!allowNegative && quantity > available) {
+      if (!allowNegative && piecesSold > available) {
         throw new ValidationError(
-          `Not enough stock for ${product.name} — only ${fmtQty(available)} left.`
+          isPack
+            ? `Not enough stock for ${product.name} — only ${fmtQty(
+                Math.floor(available / packSize)
+              )} pack(s) left.`
+            : `Not enough stock for ${product.name} — only ${fmtQty(available)} left.`
         );
       }
 
-      const unitCost = Number(product.cost_price);
-      const unitSelling = Number(product.selling_price);
+      const unitCost = isPack
+        ? round(Number(product.cost_price) * packSize)
+        : Number(product.cost_price);
+      const unitSelling = isPack ? packPrice : Number(product.selling_price);
       const lineTotal = round(unitSelling * quantity);
       const lineProfit = round(lineTotal - unitCost * quantity);
 
       await exec(
         `INSERT INTO transaction_items
             (transaction_id, product_id, product_name, qty, cost_price, selling_price,
-             discount, line_total, line_profit)
-         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+             discount, line_total, line_profit, unit)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
         [
           transactionId,
           productId,
@@ -341,27 +372,30 @@ async function posCheckout({ body }: Ctx): Promise<any> {
           unitSelling,
           lineTotal,
           lineProfit,
+          unit,
         ]
       );
 
       await exec(
         `UPDATE products SET stock_qty = stock_qty - ?, updated_at = datetime('now','localtime')
          WHERE id = ?`,
-        [quantity, productId]
+        [piecesSold, productId]
       );
 
       total = round(total + lineTotal);
       cost = round(cost + unitCost * quantity);
-      count += Math.ceil(quantity);
+      count += Math.ceil(piecesSold);
 
       lines.push({
         product_id: productId,
         name: String(product.name),
         qty: quantity,
+        unit,
+        pieces: piecesSold,
         selling_price: unitSelling,
         line_total: lineTotal,
         line_profit: lineProfit,
-        stock_left: round(available - quantity, 3),
+        stock_left: round(available - piecesSold, 3),
       });
     }
 
@@ -469,13 +503,13 @@ async function saleDetail({ query }: Ctx): Promise<any> {
   }
 
   const lines = await all(
-    `SELECT id, product_id, product_name, qty, cost_price, selling_price, line_total, line_profit
+    `SELECT id, product_id, product_name, qty, cost_price, selling_price, line_total, line_profit, unit
      FROM transaction_items WHERE transaction_id = ? ORDER BY id ASC`,
     [id]
   );
 
   const voids = await all(
-    `SELECT id, item_id, product_name, qty, unit_price, refund_amount, cost_price, reason, voided_at
+    `SELECT id, item_id, product_name, qty, unit_price, refund_amount, cost_price, reason, unit, voided_at
      FROM sale_voids WHERE transaction_id = ? ORDER BY id DESC`,
     [id]
   );
@@ -489,6 +523,7 @@ async function saleDetail({ query }: Ctx): Promise<any> {
     refund_amount: round(Number(r.refund_amount)),
     cost_price: round(Number(r.cost_price)),
     reason: String(r.reason ?? ''),
+    unit: r.unit === 'pack' ? 'pack' : 'pc',
     voided_at: String(r.voided_at),
   }));
 
@@ -516,6 +551,7 @@ async function saleDetail({ query }: Ctx): Promise<any> {
       selling_price: round(Number(r.selling_price)),
       line_total: round(Number(r.line_total)),
       line_profit: round(Number(r.line_profit)),
+      unit: r.unit === 'pack' ? 'pack' : 'pc',
     })),
     voids: voidRows,
   };
@@ -538,7 +574,7 @@ async function saleVoidItem({ body }: Ctx): Promise<any> {
     throw new ValidationError('Missing sale or item.');
   }
   if (!(quantity > 0)) {
-    throw new ValidationError('Enter how many pieces are being returned.');
+    throw new ValidationError('Enter how many of this item are being returned.');
   }
   if (unit < 0) {
     throw new ValidationError('The refund price cannot be negative.');
@@ -564,15 +600,19 @@ async function saleVoidItem({ body }: Ctx): Promise<any> {
     const lineQty = round(Number(item.qty), 3);
     const unitCost = round(Number(item.cost_price));
     const unitSell = round(Number(item.selling_price));
+    const lineUnit = item.unit === 'pack' ? 'pack' : 'pc';
+    const unitWord = lineUnit === 'pack' ? 'pack' : 'piece';
 
     if (quantity > lineQty) {
       throw new ValidationError(
-        `Only ${fmtQty(lineQty)} pcs of ${item.product_name} are still on this sale.`
+        `Only ${fmtQty(lineQty)} ${lineUnit === 'pack' ? 'pack(s)' : 'pcs'} of ${
+          item.product_name
+        } are still on this sale.`
       );
     }
     if (unit > unitSell) {
       throw new ValidationError(
-        `The refund cannot exceed the ${await money(unitSell)} charged for each piece.`
+        `The refund cannot exceed the ${await money(unitSell)} charged for each ${unitWord}.`
       );
     }
 
@@ -593,18 +633,27 @@ async function saleVoidItem({ body }: Ctx): Promise<any> {
     }
 
     // The goods come back on the shelf, unless the product was deleted since.
+    // Pack lines were taken off in pieces, so they go back as packs × pack_size.
+    let piecesBack = quantity;
     if (item.product_id !== null && item.product_id !== undefined) {
-      await exec(
-        `UPDATE products SET stock_qty = stock_qty + ?, updated_at = datetime('now','localtime')
-         WHERE id = ?`,
-        [quantity, Number(item.product_id)]
-      );
+      const product = await one('SELECT pack_size FROM products WHERE id = ?', [
+        Number(item.product_id),
+      ]);
+      if (product) {
+        const packSize = Math.max(1, Math.trunc(Number(product.pack_size ?? 1)));
+        piecesBack = lineUnit === 'pack' ? round(quantity * packSize, 3) : quantity;
+        await exec(
+          `UPDATE products SET stock_qty = stock_qty + ?, updated_at = datetime('now','localtime')
+           WHERE id = ?`,
+          [piecesBack, Number(item.product_id)]
+        );
+      }
     }
 
     const total = round(Number(sale.total_amount) - refund);
     const cost = round(Number(sale.total_cost) - costBack);
     const profit = round(total - cost);
-    const count = Math.max(0, Number(sale.item_count) - Math.ceil(quantity));
+    const count = Math.max(0, Number(sale.item_count) - Math.ceil(piecesBack));
 
     await exec(
       `UPDATE transactions SET item_count = ?, total_amount = ?, total_cost = ?, profit = ?
@@ -614,8 +663,9 @@ async function saleVoidItem({ body }: Ctx): Promise<any> {
 
     await exec(
       `INSERT INTO sale_voids
-          (transaction_id, item_id, product_name, qty, unit_price, refund_amount, cost_price, reason)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          (transaction_id, item_id, product_name, qty, unit_price, refund_amount, cost_price,
+           reason, unit)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         saleId,
         itemId,
@@ -625,6 +675,7 @@ async function saleVoidItem({ body }: Ctx): Promise<any> {
         refund,
         unitCost,
         reason,
+        lineUnit,
       ]
     );
 
@@ -632,7 +683,7 @@ async function saleVoidItem({ body }: Ctx): Promise<any> {
 
     return {
       ok: true,
-      message: `Returned ${fmtQty(quantity)} × ${item.product_name} and refunded ${await money(
+      message: `Returned ${fmtQty(quantity)} ${unitWord}(s) × ${item.product_name} and refunded ${await money(
         refund
       )}.`,
       sale: {
@@ -663,7 +714,7 @@ async function reportSummary({ query }: Ctx): Promise<any> {
 /** Builds the full product catalogue as a CSV string. */
 async function exportProducts(): Promise<any> {
   const rows = await all(
-    `SELECT name, sku, category, cost_price, selling_price, stock_qty, pack_size
+    `SELECT name, sku, category, cost_price, selling_price, stock_qty, pack_size, pack_price
      FROM products ORDER BY name COLLATE NOCASE`
   );
 
@@ -682,6 +733,7 @@ async function exportProducts(): Promise<any> {
       num(selling, 2),
       fmtQty(stock),
       Number(row.pack_size),
+      num(Number(row.pack_price ?? 0), 2),
       num(cost * stock, 2),
       num(selling - cost, 2),
       selling > 0 ? num(((selling - cost) / selling) * 100, 1) : '0.0',
@@ -702,8 +754,8 @@ async function exportSales({ query }: Ctx): Promise<any> {
 
   if (detailed) {
     const rows = await all(
-      `SELECT t.sold_at, t.reference, ti.product_name, ti.qty, ti.cost_price, ti.selling_price,
-              ti.line_total, ti.line_profit
+      `SELECT t.sold_at, t.reference, ti.product_name, ti.qty, ti.unit, ti.cost_price,
+              ti.selling_price, ti.line_total, ti.line_profit
        FROM transaction_items ti JOIN transactions t ON t.id = ti.transaction_id
        WHERE t.sale_date BETWEEN ? AND ?
        ORDER BY t.sold_at ASC, ti.id ASC`,
@@ -711,12 +763,23 @@ async function exportSales({ query }: Ctx): Promise<any> {
     );
 
     const out: any[][] = [
-      ['sold_at', 'reference', 'item', 'qty', 'unit_cost', 'unit_price', 'line_total', 'line_profit'],
+      [
+        'sold_at',
+        'reference',
+        'item',
+        'qty',
+        'unit',
+        'unit_cost',
+        'unit_price',
+        'line_total',
+        'line_profit',
+      ],
       ...rows.map((r) => [
         String(r.sold_at),
         String(r.reference),
         String(r.product_name),
         fmtQty(r.qty),
+        r.unit === 'pack' ? 'pack' : 'pc',
         num(r.cost_price, 2),
         num(r.selling_price, 2),
         num(r.line_total, 2),
@@ -765,8 +828,8 @@ async function csvTemplate(): Promise<any> {
     mime: 'text/csv',
     content: toCsv([
       [...CSV_HEADERS],
-      ['Bear Brand 300ml', 'BB300', 'Drinks', '21.50', '26.00', '24', '6'],
-      ['Lucky Me Pancit Canton', 'LM-PC', 'Noodles', '10.00', '15.00', '48', '12'],
+      ['Bear Brand 300ml', 'BB300', 'Drinks', '21.50', '26.00', '24', '6', '150.00'],
+      ['Lucky Me Pancit Canton', 'LM-PC', 'Noodles', '10.00', '15.00', '48', '12', '165.00'],
     ]),
   };
 }
@@ -847,6 +910,7 @@ async function importProducts({ body }: Ctx): Promise<any> {
           selling_price: number(record.selling_price ?? record.price ?? 0),
           stock_qty: number(record.stock_qty ?? record.stock ?? record.quantity ?? 0),
           pack_size: Math.trunc(Number(record.pack_size ?? 1)),
+          pack_price: number(record.pack_price ?? 0),
         });
       } catch (err) {
         errors.push(`Line ${line}: ${(err as Error).message}`);
@@ -862,7 +926,8 @@ async function importProducts({ body }: Ctx): Promise<any> {
       if (existingId) {
         await exec(
           `UPDATE products SET name = ?, category = ?, cost_price = ?, selling_price = ?,
-                  stock_qty = ?, pack_size = ?, updated_at = datetime('now','localtime')
+                  stock_qty = ?, pack_size = ?, pack_price = ?,
+                  updated_at = datetime('now','localtime')
            WHERE id = ?`,
           [
             data.name,
@@ -871,14 +936,16 @@ async function importProducts({ body }: Ctx): Promise<any> {
             data.selling_price,
             data.stock_qty,
             data.pack_size,
+            data.pack_price,
             existingId,
           ]
         );
         updated++;
       } else {
         await exec(
-          `INSERT INTO products (name, sku, category, cost_price, selling_price, stock_qty, pack_size)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO products (name, sku, category, cost_price, selling_price, stock_qty,
+                                 pack_size, pack_price)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             data.name,
             data.sku,
@@ -887,6 +954,7 @@ async function importProducts({ body }: Ctx): Promise<any> {
             data.selling_price,
             data.stock_qty,
             data.pack_size,
+            data.pack_price,
           ]
         );
         inserted++;

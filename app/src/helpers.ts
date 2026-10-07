@@ -136,6 +136,7 @@ export type ProductInput = {
   selling_price?: any;
   stock_qty?: any;
   pack_size?: any;
+  pack_price?: any;
 };
 
 export type NormalisedProduct = {
@@ -146,6 +147,7 @@ export type NormalisedProduct = {
   selling_price: number;
   stock_qty: number;
   pack_size: number;
+  pack_price: number;
 };
 
 /** Validates + normalises a product payload coming from the UI or a CSV row. */
@@ -158,10 +160,14 @@ export function normaliseProduct(data: ProductInput): NormalisedProduct {
   const cost = round(Number(data.cost_price ?? 0), 2);
   const selling = round(Number(data.selling_price ?? 0), 2);
   const stock = round(Number(data.stock_qty ?? 0), 3);
+  const packPrice = round(Number(data.pack_price ?? 0), 2);
   let pack = Math.trunc(Number(data.pack_size ?? 1));
 
   if (cost < 0 || selling < 0) {
     throw new ValidationError('Prices cannot be negative.');
+  }
+  if (packPrice < 0) {
+    throw new ValidationError('The price per pack cannot be negative.');
   }
   if (!Number.isFinite(pack) || pack < 1) {
     pack = 1;
@@ -175,6 +181,7 @@ export function normaliseProduct(data: ProductInput): NormalisedProduct {
     selling_price: selling,
     stock_qty: stock,
     pack_size: pack,
+    pack_price: packPrice,
   };
 }
 

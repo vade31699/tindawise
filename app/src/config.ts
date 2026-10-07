@@ -28,4 +28,5 @@ export const CSV_HEADERS = [
   'selling_price',
   'stock_qty',
   'pack_size',
+  'pack_price',
 ] as const;

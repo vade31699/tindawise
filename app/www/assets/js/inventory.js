@@ -48,15 +48,23 @@
   function renderProduct(product) {
     const margin = product.margin > 0 ? product.margin + '% margin' : 'no margin set';
     const meta = [product.sku, product.category].filter(Boolean).join(' · ');
+    const packSize = parseInt(product.pack_size, 10) || 1;
+    const packInfo = packSize > 1
+      ? ' · ' + packSize + ' pcs/pack' +
+        (product.pack_price > 0 ? ' · ' + App.money(product.pack_price) + '/pack' : '')
+      : '';
+    const priceLine = product.selling_price > 0
+      ? App.money(product.selling_price) + ' / pc'
+      : 'No price yet';
 
     return '' +
       '<li class="list__item" data-id="' + product.id + '">' +
         '<div class="list__body">' +
           '<div class="list__title">' + App.escape(product.name) + '</div>' +
           '<div class="list__sub">' +
-            App.escape(product.selling_price > 0 ? App.money(product.selling_price) + ' / pc' : 'No price yet') +
-            ' · ' + App.escape(margin) + (meta ? ' · ' + App.escape(meta) : '') +
+            App.escape(priceLine + packInfo + ' · ' + margin + (meta ? ' · ' + meta : '')) +
           '</div>' +
+        '</div>' +
         '</div>' +
         '<div class="list__trail">' +
           App.qty(product.stock_qty) + ' pcs' +
@@ -113,6 +121,27 @@
   }
 
   /* ------------------------------------------------------------ item modal */
+  const packRow = document.getElementById('pack-price-row');
+  const packPriceInput = document.getElementById('f-pack-price');
+  const packHint = document.getElementById('pack-price-hint');
+
+  // The price-per-pack field only exists for items that are sold in packs;
+  // a 0 pack price keeps the item per-piece only.
+  function updatePackRow() {
+    const form = els.itemForm;
+    const pack = parseInt(form.querySelector('[name="pack_size"]').value, 10) || 1;
+    const cost = parseFloat(form.querySelector('[name="cost_price"]').value) || 0;
+    const selling = parseFloat(form.querySelector('[name="selling_price"]').value) || 0;
+
+    packRow.hidden = pack < 2;
+    if (pack < 2) {
+      packPriceInput.value = 0;
+      packHint.textContent = '—';
+      return;
+    }
+    packHint.textContent = App.money(selling * pack) + ' selling · ' + App.money(cost * pack) + ' buying';
+  }
+
   function openItemModal(product) {
     const form = els.itemForm;
     form.reset();
@@ -127,12 +156,15 @@
       form.querySelector('[name="selling_price"]').value = product.selling_price;
       form.querySelector('[name="stock_qty"]').value = product.stock_qty;
       form.querySelector('[name="pack_size"]').value = product.pack_size;
+      packPriceInput.value = product.pack_price || 0;
     } else {
       form.querySelector('[name="pack_size"]').value = 1;
       form.querySelector('[name="stock_qty"]').value = 0;
+      packPriceInput.value = 0;
     }
 
     updateMarginPreview();
+    updatePackRow();
     App.openModal('item-modal');
   }
 
@@ -148,6 +180,10 @@
   els.itemForm.addEventListener('input', (event) => {
     if (event.target.name === 'cost_price' || event.target.name === 'selling_price') {
       updateMarginPreview();
+      updatePackRow();
+    }
+    if (event.target.name === 'pack_size') {
+      updatePackRow();
     }
   });
 
@@ -156,6 +192,7 @@
     const button = document.getElementById('item-submit');
     const form = event.target;
 
+    const packSize = parseInt(form.querySelector('[name="pack_size"]').value, 10) || 1;
     const product = {
       id: parseInt(form.querySelector('[name="id"]').value, 10) || 0,
       name: form.querySelector('[name="name"]').value.trim(),
@@ -164,7 +201,8 @@
       cost_price: form.querySelector('[name="cost_price"]').value,
       selling_price: form.querySelector('[name="selling_price"]').value,
       stock_qty: form.querySelector('[name="stock_qty"]').value || 0,
-      pack_size: form.querySelector('[name="pack_size"]').value || 1
+      pack_size: packSize,
+      pack_price: packSize > 1 ? (parseFloat(form.querySelector('[name="pack_price"]').value) || 0) : 0
     };
 
     if (!product.name) {

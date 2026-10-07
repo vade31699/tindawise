@@ -137,11 +137,18 @@ export async function buildReport(from: string, to: string): Promise<Report> {
     margin: summed.revenue > 0 ? round((summed.profit / summed.revenue) * 100, 1) : 0,
   };
 
+  // Quantities are reported in single pieces, so pack lines are converted
+  // using the pack size recorded on the product.
   const topRows = await all(
-    `SELECT ti.product_name, SUM(ti.qty) AS qty, SUM(ti.line_total) AS revenue,
+    `SELECT ti.product_name,
+            SUM(ti.qty * CASE WHEN ti.unit = 'pack'
+                              THEN MAX(1, COALESCE(p.pack_size, 1))
+                              ELSE 1 END) AS qty,
+            SUM(ti.line_total) AS revenue,
             SUM(ti.line_profit) AS profit
      FROM transaction_items ti
      JOIN transactions t ON t.id = ti.transaction_id
+     LEFT JOIN products p ON p.id = ti.product_id
      WHERE t.sale_date BETWEEN ? AND ?
      GROUP BY ti.product_name
      ORDER BY qty DESC, revenue DESC LIMIT 8`,

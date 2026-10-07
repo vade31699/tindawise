@@ -27,11 +27,29 @@
     receiptBody: document.getElementById('receipt-body')
   };
 
-  /** cart: Map<productId, {product, qty}> so a product only appears once. */
+  /** cart: Map<"productId:unit", {product, unit, qty}> so the same item can be
+      sold per piece and per pack as two separate lines. */
   const cart = new Map();
   let products = [];
   let filter = 'all';
   let query = '';
+
+  /* ---------------------------------------------------------- unit helpers */
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const packSizeOf = (p) => Math.max(1, parseInt(p.pack_size, 10) || 1);
+  const packPriceOf = (p) => Number(p.pack_price) || 0;
+  /** Only a pack size > 1 with a pack price offers the per-pack option. */
+  const canSellPack = (p) => packSizeOf(p) > 1 && packPriceOf(p) > 0;
+  const unitPrice = (p, unit) => (unit === 'pack' ? packPriceOf(p) : Number(p.selling_price) || 0);
+  const unitCost = (p, unit) =>
+    unit === 'pack' ? round2((Number(p.cost_price) || 0) * packSizeOf(p)) : Number(p.cost_price) || 0;
+  const maxUnits = (p, unit) =>
+    unit === 'pack' ? Math.floor((Number(p.stock_qty) || 0) / packSizeOf(p)) : Number(p.stock_qty) || 0;
+  const lineKey = (id, unit) => id + ':' + unit;
+  const unitWord = (unit) => (unit === 'pack' ? 'pack' : 'pc');
+
+  /** Which unit the card is currently set to sell in (defaults to per piece). */
+  const unitSel = {};
 
   /* --------------------------------------------------------------- loading */
   async function loadProducts() {
@@ -64,70 +82,102 @@
     }
 
     els.grid.innerHTML = list.map((p) => {
-      const inCart = cart.get(p.id);
+      const unit = unitSel[p.id] === 'pack' && canSellPack(p) ? 'pack' : 'pc';
+      const key = lineKey(p.id, unit);
+      const inCart = cart.get(key);
       const out = p.stock_qty <= 0;
+      const left = maxUnits(p, unit);
+      const packs = canSellPack(p);
+
+      const toggle = packs
+        ? '<span class="unit-toggle" data-unit-row>' +
+            '<button type="button" data-unit="pc" data-id="' + p.id + '"' +
+              (unit === 'pc' ? ' class="is-active"' : '') + '>PCS</button>' +
+            '<button type="button" data-unit="pack" data-id="' + p.id + '"' +
+              (unit === 'pack' ? ' class="is-active"' : '') + '>PACK</button>' +
+          '</span>'
+        : '';
+
+      const stockNote = out
+        ? '<span class="badge badge--out">Out of stock</span>'
+        : unit === 'pack'
+          ? App.qty(left) + ' pack(s) left'
+          : App.qty(left) + ' pcs left';
+
       return '' +
-        '<button class="product-card' + (out ? ' is-out' : '') + '" type="button" data-id="' + p.id + '">' +
+        '<div class="product-card' + (out ? ' is-out' : '') + '" role="button" tabindex="0"' +
+          ' data-id="' + p.id + '">' +
           '<span class="product-card__name">' + App.escape(p.name) + '</span>' +
-          '<span class="product-card__price">' + App.money(p.selling_price) + '</span>' +
-          '<span class="product-card__meta">' +
-            (out ? '<span class="badge badge--out">Out of stock</span>'
-                 : App.qty(p.stock_qty) + ' pcs left') +
-            (inCart ? ' · <span class="badge badge--ok">' + App.qty(inCart.qty) + ' in cart</span>' : '') +
+          '<span class="product-card__price">' + App.money(unitPrice(p, unit)) + '</span>' +
+          '<span class="product-card__meta">' + stockNote +
+            (inCart ? ' · <span class="badge badge--ok">' + App.qty(inCart.qty) +
+              ' ' + unitWord(unit) + ' in cart</span>' : '') +
           '</span>' +
-        '</button>';
+          toggle +
+        '</div>';
     }).join('');
   }
 
   /* ------------------------------------------------------------------ cart */
-  function addToCart(productId) {
+  function addToCart(productId, unit) {
     const product = products.find((p) => p.id === productId);
     if (!product) { return; }
 
-    const line = cart.get(productId);
+    const u = unit === 'pack' && canSellPack(product) ? 'pack' : 'pc';
+    const key = lineKey(productId, u);
+    const line = cart.get(key);
     const qty = line ? line.qty + 1 : 1;
 
-    if (!cfg.allowNegative && qty > product.stock_qty) {
-      App.toast('Only ' + App.qty(product.stock_qty) + ' pc(s) of ' + product.name + ' in stock.', 'err');
+    if (!cfg.allowNegative && qty > maxUnits(product, u)) {
+      App.toast(
+        u === 'pack'
+          ? 'Only ' + App.qty(maxUnits(product, u)) + ' pack(s) of ' + product.name + ' in stock.'
+          : 'Only ' + App.qty(product.stock_qty) + ' pc(s) of ' + product.name + ' in stock.',
+        'err'
+      );
       return;
     }
 
-    cart.set(productId, { product: product, qty: qty });
+    cart.set(key, { product: product, unit: u, qty: qty });
     renderGrid();
     renderCart();
     if (navigator.vibrate) { navigator.vibrate(8); }
   }
 
-  function setQty(productId, qty) {
-    const line = cart.get(productId);
+  function setQty(key, qty) {
+    const line = cart.get(key);
     if (!line) { return; }
 
-    if (!cfg.allowNegative && qty > line.product.stock_qty) {
-      qty = line.product.stock_qty;
+    if (!cfg.allowNegative && qty > maxUnits(line.product, line.unit)) {
+      qty = maxUnits(line.product, line.unit);
       App.toast('That is all the stock you have for ' + line.product.name + '.', 'err');
     }
 
     if (qty <= 0) {
-      cart.delete(productId);
+      cart.delete(key);
     } else {
-      cart.set(productId, { product: line.product, qty: Math.round(qty * 1000) / 1000 });
+      cart.set(key, {
+        product: line.product,
+        unit: line.unit,
+        qty: Math.round(qty * 1000) / 1000
+      });
     }
     renderGrid();
     renderCart();
   }
 
   function totals() {
-    let count = 0, revenue = 0, cost = 0;
+    let pieces = 0, revenue = 0, cost = 0;
     cart.forEach((line) => {
-      count += line.qty;
-      revenue += line.product.selling_price * line.qty;
-      cost += line.product.cost_price * line.qty;
+      pieces += line.qty * (line.unit === 'pack' ? packSizeOf(line.product) : 1);
+      revenue += unitPrice(line.product, line.unit) * line.qty;
+      cost += unitCost(line.product, line.unit) * line.qty;
     });
     return {
-      count: Math.round(count * 1000) / 1000,
-      revenue: Math.round(revenue * 100) / 100,
-      cost: Math.round(cost * 100) / 100,
-      profit: Math.round((revenue - cost) * 100) / 100
+      count: Math.round(pieces * 1000) / 1000,
+      revenue: round2(revenue),
+      cost: round2(cost),
+      profit: round2(revenue - cost)
     };
   }
 
@@ -141,20 +191,28 @@
     if (cart.size === 0) {
       els.lines.innerHTML = '<li class="empty"><span class="empty__icon">🛒</span>Tap items to add them here.</li>';
     } else {
-      els.lines.innerHTML = Array.from(cart.values()).map((line) => '' +
-        '<li class="cart-line" data-id="' + line.product.id + '">' +
+      els.lines.innerHTML = Array.from(cart.values()).map((line) => {
+        const price = unitPrice(line.product, line.unit);
+        const word = unitWord(line.unit);
+        const key = lineKey(line.product.id, line.unit);
+        return '' +
+        '<li class="cart-line" data-line="' + key + '">' +
           '<div class="list__body">' +
-            '<div class="cart-line__name">' + App.escape(line.product.name) + '</div>' +
-            '<div class="cart-line__sub">' + App.money(line.product.selling_price) + ' / pc · ' +
-              App.money(line.product.selling_price * line.qty) + '</div>' +
+            '<div class="cart-line__name">' + App.escape(line.product.name) +
+              ' <span class="badge">' + word.toUpperCase() + '</span></div>' +
+            '<div class="cart-line__sub">' + App.money(price) + ' / ' + word + ' · ' +
+              App.money(round2(price * line.qty)) +
+              (line.unit === 'pack' ? ' (' + App.qty(line.qty * packSizeOf(line.product)) + ' pcs)' : '') +
+            '</div>' +
           '</div>' +
           '<div class="stepper">' +
-            '<button type="button" data-step="-1" data-id="' + line.product.id + '" aria-label="Less">−</button>' +
+            '<button type="button" data-step="-1" data-line="' + key + '" aria-label="Less">−</button>' +
             '<input type="number" step="any" min="0" inputmode="decimal" value="' + line.qty + '" ' +
-              'data-qty="' + line.product.id + '" aria-label="Quantity">' +
-            '<button type="button" data-step="1" data-id="' + line.product.id + '" aria-label="More">＋</button>' +
+              'data-qty="' + key + '" aria-label="Quantity">' +
+            '<button type="button" data-step="1" data-line="' + key + '" aria-label="More">＋</button>' +
           '</div>' +
-        '</li>').join('');
+        '</li>';
+      }).join('');
     }
 
     els.sumItems.textContent = App.qty(t.count);
@@ -192,7 +250,8 @@
   /* --------------------------------------------------------------- receipt */
   function renderReceipt(sale) {
     const lines = sale.lines.map((l) => '' +
-      '<div class="receipt__line"><span>' + App.escape(l.name) + ' × ' + App.qty(l.qty) + '</span>' +
+      '<div class="receipt__line"><span>' + App.escape(l.name) + ' × ' + App.qty(l.qty) +
+      (l.unit === 'pack' ? ' pack(s)' : ' pc') + '</span>' +
       '<span>' + App.money(l.line_total) + '</span></div>').join('');
 
     els.receiptBody.innerHTML = '' +
@@ -220,7 +279,11 @@
     }
 
     const cash = parseFloat(els.cash.value) || 0;
-    const items = Array.from(cart.values()).map((line) => ({ product_id: line.product.id, qty: line.qty }));
+    const items = Array.from(cart.values()).map((line) => ({
+      product_id: line.product.id,
+      qty: line.qty,
+      unit: line.unit
+    }));
 
     App.busy(els.checkout, true, 'Saving…');
     try {
@@ -244,8 +307,24 @@
 
   /* ------------------------------------------------------------- listeners */
   els.grid.addEventListener('click', (event) => {
+    const unitBtn = event.target.closest('[data-unit]');
+    if (unitBtn) {
+      const id = parseInt(unitBtn.dataset.id, 10);
+      unitSel[id] = unitBtn.dataset.unit === 'pack' ? 'pack' : 'pc';
+      renderGrid();
+      return;
+    }
     const card = event.target.closest('[data-id]');
-    if (card) { addToCart(parseInt(card.dataset.id, 10)); }
+    if (card) { addToCart(parseInt(card.dataset.id, 10), unitSel[parseInt(card.dataset.id, 10)]); }
+  });
+
+  els.grid.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') { return; }
+    const card = event.target.closest('.product-card[data-id]');
+    if (!card || event.target !== card) { return; }
+    event.preventDefault();
+    const id = parseInt(card.dataset.id, 10);
+    addToCart(id, unitSel[id]);
   });
 
   els.cartBar.addEventListener('click', () => {
@@ -260,16 +339,16 @@
   els.lines.addEventListener('click', (event) => {
     const button = event.target.closest('[data-step]');
     if (!button) { return; }
-    const id = parseInt(button.dataset.id, 10);
-    const line = cart.get(id);
+    const key = button.dataset.line;
+    const line = cart.get(key);
     if (!line) { return; }
-    setQty(id, line.qty + parseInt(button.dataset.step, 10));
+    setQty(key, line.qty + parseInt(button.dataset.step, 10));
   });
 
   els.lines.addEventListener('change', (event) => {
     const input = event.target.closest('[data-qty]');
     if (!input) { return; }
-    setQty(parseInt(input.dataset.qty, 10), parseFloat(input.value) || 0);
+    setQty(input.dataset.qty, parseFloat(input.value) || 0);
   });
 
   els.quick.addEventListener('click', (event) => {
@@ -450,11 +529,13 @@
           '<li class="cart-line">' +
             '<div class="list__body">' +
               '<div class="cart-line__name">' + App.escape(l.name) + '</div>' +
-              '<div class="cart-line__sub">' + App.qty(l.qty) + ' pc × ' + App.money(l.selling_price) +
+              '<div class="cart-line__sub">' + App.qty(l.qty) + ' ' + unitWord(l.unit) + ' × ' +
+                App.money(l.selling_price) +
                 ' = ' + App.money(l.line_total) + '</div>' +
             '</div>' +
             '<button class="btn btn--danger-ghost btn--sm" type="button" data-remove="' + l.id + '"' +
               ' data-name="' + App.escape(l.name) + '" data-maxqty="' + l.qty + '"' +
+              ' data-unit="' + unitWord(l.unit) + '"' +
               ' data-price="' + l.selling_price + '">Remove</button>' +
           '</li>').join('') + '</ul>'
       : '<div class="empty"><span class="empty__icon">📦</span>Every item on this sale was removed.</div>';
@@ -466,7 +547,7 @@
             '<div class="list__body">' +
               '<div class="list__title">' + App.escape(v.name) + '</div>' +
               '<div class="list__sub">' + App.escape(v.voided_at) + ' · ' + App.qty(v.qty) +
-                ' pc × ' + App.money(v.unit_price) +
+                ' ' + unitWord(v.unit) + ' × ' + App.money(v.unit_price) +
                 (v.reason ? ' · ' + App.escape(v.reason) : '') + '</div>' +
             '</div>' +
             '<div class="list__trail" style="color:var(--danger)">−' + App.money(v.refund_amount) + '</div>' +
@@ -482,11 +563,13 @@
       itemId: parseInt(button.dataset.remove, 10),
       name: button.dataset.name,
       maxQty: parseFloat(button.dataset.maxqty),
-      maxPrice: parseFloat(button.dataset.price)
+      maxPrice: parseFloat(button.dataset.price),
+      unit: button.dataset.unit === 'pack' ? 'pack' : 'pc'
     };
 
     document.getElementById('void-item').textContent = voidTarget.name + ' — ' +
-      App.qty(voidTarget.maxQty) + ' pc on this sale at ' + App.money(voidTarget.maxPrice) + ' each.';
+      App.qty(voidTarget.maxQty) + ' ' + unitWord(voidTarget.unit) +
+      ' on this sale at ' + App.money(voidTarget.maxPrice) + ' each.';
 
     const qtyInput = document.getElementById('void-qty');
     const priceInput = document.getElementById('void-price');
@@ -546,8 +629,8 @@
 
     // The inputs are clamped as you type; this guards a stale or scripted value.
     if (!(qty > 0) || qty > voidTarget.maxQty || !(price >= 0) || price > voidTarget.maxPrice) {
-      App.toast('Enter 1 to ' + App.qty(voidTarget.maxQty) + ' pc at up to ' +
-        App.money(voidTarget.maxPrice) + ' each.', 'err');
+      App.toast('Enter 1 to ' + App.qty(voidTarget.maxQty) + ' ' + unitWord(voidTarget.unit) +
+        ' at up to ' + App.money(voidTarget.maxPrice) + ' each.', 'err');
       renderVoidSummary();
       return;
     }
